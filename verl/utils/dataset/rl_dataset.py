@@ -197,7 +197,10 @@ class RLHFDataset(Dataset):
                 except ImportError as exc:
                     if self.ignore_missing_vision_deps:
                         logger.warning(
-                            "Skipping multimodal prompt filtering because vision dependencies are missing: %s", exc
+                            "Skipping multimodal prompt filtering because vision dependencies are missing: %s. "
+                            "Install 'qwen_vl_utils' to enable vision processing or set "
+                            "`data.ignore_missing_vision_deps=false` to raise an error.",
+                            exc,
                         )
                         processor = None
                         self.processor = None
@@ -315,6 +318,15 @@ class RLHFDataset(Dataset):
         # When concatenating image and video datasets, pop will return None for image or video sample
         images = example.pop(self.image_key, None) or []
         videos = example.pop(self.video_key, None) or []
+
+        if (images or videos) and self.processor is None:
+            if not hasattr(self, "_warned_missing_vision_processor"):
+                logger.warning(
+                    "Multimodal data detected but no processor is available. Install 'qwen_vl_utils' or "
+                    "configure a compatible processor to enable vision features."
+                )
+                self._warned_missing_vision_processor = True
+            return messages
 
         image_offset, video_offset = 0, 0
         for message in messages:

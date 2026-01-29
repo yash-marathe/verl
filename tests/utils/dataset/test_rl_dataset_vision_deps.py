@@ -17,9 +17,12 @@ import sys
 import types
 from pathlib import Path
 
+import pytest
 
-def test_missing_vision_deps_disables_processor(monkeypatch):
+
+def test_missing_vision_deps_disables_processor(monkeypatch, caplog):
     rl_dataset = _load_rl_dataset(monkeypatch)
+    caplog.set_level("WARNING")
 
     class DummyConfig:
         def __init__(self, data):
@@ -94,6 +97,84 @@ def test_missing_vision_deps_disables_processor(monkeypatch):
     )
 
     assert dataset.processor is None
+    assert any("Skipping multimodal prompt filtering" in record.message for record in caplog.records)
+
+
+def test_missing_vision_deps_raises_when_not_ignored(monkeypatch):
+    rl_dataset = _load_rl_dataset(monkeypatch)
+
+    class DummyConfig:
+        def __init__(self, data):
+            self._data = data
+
+        def get(self, key, default=None):
+            return self._data.get(key, default)
+
+    class DummyDataset:
+        def __len__(self):
+            return 0
+
+        def filter(self, func, num_proc=None, desc=None):
+            return self
+
+    def fake_load_dataset(*args, **kwargs):
+        return {"train": DummyDataset()}
+
+    monkeypatch.setattr(rl_dataset.RLHFDataset, "_download", lambda self, use_origin_parquet=False: None)
+    monkeypatch.setattr(rl_dataset.datasets, "load_dataset", fake_load_dataset)
+    monkeypatch.setattr(rl_dataset.datasets, "concatenate_datasets", lambda frames: frames[0])
+
+    original_import = rl_dataset.importlib.import_module
+
+    def fake_import_module(name, package=None):
+        if name == "verl.utils.dataset.vision_utils":
+            raise ImportError("missing vision deps")
+        return original_import(name, package)
+
+    monkeypatch.setattr(rl_dataset.importlib, "import_module", fake_import_module)
+
+    class DummyTokenizer:
+        def apply_chat_template(self, messages, add_generation_prompt=True, **kwargs):
+            return [1, 2, 3]
+
+    class DummyProcessor:
+        def apply_chat_template(self, messages, add_generation_prompt=True, tokenize=False, **kwargs):
+            return "prompt"
+
+        def __call__(self, **kwargs):
+            return {"input_ids": [[1, 2]]}
+
+    with pytest.raises(ImportError):
+        rl_dataset.RLHFDataset(
+            data_files="dummy.parquet",
+            tokenizer=DummyTokenizer(),
+            config=DummyConfig(
+                {
+                    "cache_dir": "/tmp",
+                    "prompt_key": "prompt",
+                    "image_key": "images",
+                    "video_key": "videos",
+                    "image_patch_size": 14,
+                    "max_prompt_length": 1024,
+                    "return_raw_chat": False,
+                    "return_full_prompt": False,
+                    "truncation": "error",
+                    "filter_overlong_prompts": True,
+                    "apply_chat_template_kwargs": {},
+                    "tool_config_path": None,
+                    "filter_overlong_prompts_workers": 1,
+                    "use_shm": False,
+                    "chat_template_func": None,
+                    "need_tools_kwargs": False,
+                    "filter_prompts": True,
+                    "return_multi_modal_inputs": True,
+                    "shuffle": False,
+                    "seed": None,
+                    "ignore_missing_vision_deps": False,
+                }
+            ),
+            processor=DummyProcessor(),
+        )
 
 
 def _load_rl_dataset(monkeypatch):
