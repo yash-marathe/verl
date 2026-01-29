@@ -1,3 +1,17 @@
+# Copyright 2024 Bytedance Ltd. and/or its affiliates
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import importlib.util
 import sys
 import types
@@ -81,3 +95,23 @@ def test_get_device_uuid_fallback(monkeypatch):
     utils = _load_vllm_utils(monkeypatch)
 
     assert utils.get_device_uuid(1) == "CUDA-2-3-1"
+
+
+def test_get_device_uuid_fallback_without_visible_devices(monkeypatch):
+    fake_platforms = types.ModuleType("vllm.platforms")
+
+    class DummyPlatform:
+        def get_device_uuid(self, device_id):
+            raise NotImplementedError
+
+    fake_platforms.current_platform = DummyPlatform()
+    fake_vllm = types.ModuleType("vllm")
+    fake_vllm.platforms = fake_platforms
+
+    monkeypatch.setitem(sys.modules, "vllm", fake_vllm)
+    monkeypatch.setitem(sys.modules, "vllm.platforms", fake_platforms)
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+
+    utils = _load_vllm_utils(monkeypatch)
+
+    assert utils.get_device_uuid(1) == "CUDA-1-1"
