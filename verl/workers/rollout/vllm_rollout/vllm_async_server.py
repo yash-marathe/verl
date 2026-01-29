@@ -57,19 +57,25 @@ from verl.workers.rollout.vllm_rollout.utils import (
 
 _VLLM_VERSION = version.parse(vllm.__version__)
 
-if _VLLM_VERSION > version.parse("0.11.0"):
+# FlexibleArgumentParser has lived in different locations across vLLM
+# versions and downstream forks (e.g. ROCm patches). Try the
+# argparse_utils module first, then fall back to the legacy
+# vllm.utils export.
+try:  # vLLM >= 0.11.x and some patched builds
     from vllm.utils.argparse_utils import FlexibleArgumentParser
-
-    if _VLLM_VERSION == version.parse("0.12.0"):
-        from vllm.entrypoints.harmony_utils import get_encoding
-
-        get_encoding()
-    elif _VLLM_VERSION >= version.parse("0.13.0"):
-        from vllm.entrypoints.openai.parser.harmony_utils import get_encoding
-
-        get_encoding()
-else:
+except ImportError:  # Older vLLM that still exports it directly
     from vllm.utils import FlexibleArgumentParser
+
+# Handle the Harmony encoding initialization required for specific
+# vLLM versions.
+if _VLLM_VERSION == version.parse("0.12.0"):
+    from vllm.entrypoints.harmony_utils import get_encoding
+
+    get_encoding()
+elif _VLLM_VERSION >= version.parse("0.13.0"):
+    from vllm.entrypoints.openai.parser.harmony_utils import get_encoding
+
+    get_encoding()
 
 
 logger = logging.getLogger(__file__)
