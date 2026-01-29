@@ -114,4 +114,4 @@ def test_get_device_uuid_fallback_without_visible_devices(monkeypatch):
 
     utils = _load_vllm_utils(monkeypatch)
 
-    assert utils.get_device_uuid(1) == "CUDA-1-1"
+    assert utils.get_device_uuid(1) == "CUDA-all-1"

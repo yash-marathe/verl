@@ -66,7 +66,7 @@ def get_device_uuid(device_id: int) -> str:
         if visible_devices:
             visible_devices = visible_devices.replace(",", "-")
         else:
-            visible_devices = str(device_id)
+            visible_devices = "all"
         return f"CUDA-{visible_devices}-{device_id}"
 
 
