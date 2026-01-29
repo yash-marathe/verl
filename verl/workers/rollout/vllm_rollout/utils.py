@@ -52,6 +52,14 @@ def set_death_signal():
 
 
 def get_device_uuid(device_id: int) -> str:
+    """Return a stable identifier for the given device.
+
+    For CUDA / ROCm / other GPU backends this is used to derive a
+    per-device IPC socket path shared between training and rollout
+    processes. Some vLLM platforms (e.g. ROCm in certain releases)
+    don't implement ``get_device_uuid`` yet, so we fall back to a
+    deterministic identifier based on the physical device index.
+    """
     from vllm.platforms import current_platform
 
     # Convert torch.npu.current_device to its corresponding ASCEND_RT_VISIBLE_DEVICES.
@@ -59,8 +67,31 @@ def get_device_uuid(device_id: int) -> str:
         npu_visible_devices = os.environ["ASCEND_RT_VISIBLE_DEVICES"].split(",")
         assert device_id < len(npu_visible_devices), f"device_id {device_id} must less than {npu_visible_devices}"
         return "NPU-" + npu_visible_devices[device_id]
-    else:
+
+    # For CUDA / ROCm / other backends use vLLM's platform abstraction.
+    try:
         return current_platform.get_device_uuid(device_id)
+    except NotImplementedError:
+        # Some platforms (e.g. ROCm) don't implement get_device_uuid yet.
+        # Fall back to a stable id derived from the physical device index
+        # that vLLM sees so that different processes can rendezvous on
+        # the same IPC socket.
+        try:
+            physical_id = current_platform.device_id_to_physical_device_id(device_id)
+        except Exception:
+            physical_id = device_id
+
+        platform_name = getattr(current_platform, "device_name", "") or getattr(
+            current_platform, "device_type", "device"
+        )
+        fallback_uuid = f"{platform_name}-{physical_id}"
+        logger.warning(
+            "current_platform.get_device_uuid is not implemented for this platform; "
+            "falling back to %s. This is sufficient for Verl's IPC rendezvous but "
+            "does not expose a true hardware UUID.",
+            fallback_uuid,
+        )
+        return fallback_uuid
 
 
 def get_vllm_max_lora_rank(lora_rank: int):
