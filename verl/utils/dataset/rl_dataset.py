@@ -15,6 +15,7 @@
 # limitations under the License.
 
 import copy
+import importlib
 import logging
 import os
 import re
@@ -107,6 +108,7 @@ class RLHFDataset(Dataset):
         self.image_key = config.get("image_key", "images")
         self.video_key = config.get("video_key", "videos")
         self.image_patch_size = config.get("image_patch_size", 14)
+        self.ignore_missing_vision_deps = config.get("ignore_missing_vision_deps", True)
         self.max_prompt_length = config.get("max_prompt_length", 1024)
         self.return_raw_chat = config.get("return_raw_chat", False)
         self.return_full_prompt = config.get("return_full_prompt", False)
@@ -188,7 +190,21 @@ class RLHFDataset(Dataset):
             video_key = self.video_key
 
             if processor is not None:
-                from verl.utils.dataset.vision_utils import process_image, process_video
+                try:
+                    vision_utils = importlib.import_module("verl.utils.dataset.vision_utils")
+                    process_image = vision_utils.process_image
+                    process_video = vision_utils.process_video
+                except ImportError as exc:
+                    if self.ignore_missing_vision_deps:
+                        logger.warning(
+                            "Skipping multimodal prompt filtering because vision dependencies are missing: %s", exc
+                        )
+                        processor = None
+                        self.processor = None
+                    else:
+                        raise
+
+            if processor is not None:
 
                 def doc2len(doc) -> int:
                     try:
@@ -203,7 +219,8 @@ class RLHFDataset(Dataset):
                         )
                         if image_key in doc and doc[image_key]:
                             images = [
-                                process_image(image, image_patch_size=self.image_patch_size) for image in doc[image_key]
+                                process_image(image, image_patch_size=self.image_patch_size)
+                                for image in doc[image_key]
                             ]
                         else:
                             images = None
