@@ -59,8 +59,15 @@ def get_device_uuid(device_id: int) -> str:
         npu_visible_devices = os.environ["ASCEND_RT_VISIBLE_DEVICES"].split(",")
         assert device_id < len(npu_visible_devices), f"device_id {device_id} must less than {npu_visible_devices}"
         return "NPU-" + npu_visible_devices[device_id]
-    else:
+    try:
         return current_platform.get_device_uuid(device_id)
+    except NotImplementedError:
+        visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES", "")
+        if visible_devices:
+            visible_devices = visible_devices.replace(",", "-")
+        else:
+            visible_devices = str(device_id)
+        return f"CUDA-{visible_devices}-{device_id}"
 
 
 def get_vllm_max_lora_rank(lora_rank: int):
